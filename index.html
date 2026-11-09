@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hacker Terminal Simulator Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Tone.js サウンドエフェクト用 -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap');
+
+        body {
+            font-family: 'Share Tech Mono', 'Courier New', Courier, monospace;
+            background-color: #020202;
+            color: #00ff41;
+            overflow-x: hidden;
+            margin: 0;
+            padding: 0;
+            height: 100vh;
+        }
+
+        .text-glow {
+            text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+        }
+
+        /* スキャンラインエフェクト */
+        .scanlines {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: linear-gradient(
+                to bottom,
+                rgba(255,255,255,0),
+                rgba(255,255,255,0) 50%,
+                rgba(0,0,0,0.2) 50%,
+                rgba(0,0,0,0.2)
+            );
+            background-size: 100% 4px;
+            pointer-events: none;
+            z-index: 50;
+        }
+
+        /* ビネット（周辺減光） */
+        .vignette {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: radial-gradient(circle, transparent 50%, rgba(0,0,0,0.9) 100%);
+            pointer-events: none;
+            z-index: 40;
+        }
+
+        /* カーソル点滅 */
+        .cursor {
+            display: inline-block;
+            width: 10px;
+            height: 1.2em;
+            background-color: #00ff41;
+            vertical-align: text-bottom;
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* HUD（ヘッドアップディスプレイ） */
+        .hud {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            border: 1px solid #00ff41;
+            padding: 10px 20px;
+            background-color: rgba(0, 20, 0, 0.8);
+            z-index: 30;
+            font-size: 0.9rem;
+            box-shadow: 0 0 10px rgba(0, 255, 65, 0.3);
+        }
+
+        /* ポップアップ演出 */
+        .popup-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.8);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .popup-box {
+            padding: 20px 40px;
+            border: 4px solid;
+            font-size: 4rem;
+            font-weight: bold;
+            letter-spacing: 5px;
+            text-transform: uppercase;
+        }
+
+        .granted {
+            color: #00ff41;
+            border-color: #00ff41;
+            background-color: rgba(0, 255, 65, 0.1);
+            box-shadow: 0 0 40px rgba(0, 255, 65, 0.8);
+            animation: pulse-green 1s infinite alternate;
+        }
+
+        .denied {
+            color: #ff003c;
+            border-color: #ff003c;
+            background-color: rgba(255, 0, 60, 0.1);
+            box-shadow: 0 0 40px rgba(255, 0, 60, 0.8);
+            animation: pulse-red 0.1s infinite alternate;
+        }
+
+        @keyframes pulse-green {
+            from { box-shadow: 0 0 20px rgba(0, 255, 65, 0.5); }
+            to { box-shadow: 0 0 60px rgba(0, 255, 65, 1); }
+        }
+
+        @keyframes pulse-red {
+            from { transform: translate(-2px, 2px); box-shadow: 0 0 20px rgba(255, 0, 60, 0.5); }
+            to { transform: translate(2px, -2px); box-shadow: 0 0 60px rgba(255, 0, 60, 1); }
+        }
+
+        /* 画面全体のグリッチ（アクセス拒否時） */
+        .glitch-screen {
+            animation: screen-shake 0.1s infinite;
+            filter: hue-rotate(90deg) contrast(150%);
+        }
+
+        @keyframes screen-shake {
+            0% { transform: translate(0, 0) }
+            20% { transform: translate(-10px, 5px) }
+            40% { transform: translate(-10px, -5px) }
+            60% { transform: translate(10px, 5px) }
+            80% { transform: translate(10px, -5px) }
+            100% { transform: translate(0, 0) }
+        }
+
+        /* コンソール */
+        #console-container {
+            padding: 20px;
+            padding-bottom: 30vh; /* 下部に余白 */
+            white-space: pre-wrap;
+            word-wrap: break-word;
+            font-size: 1.1rem;
+            line-height: 1.4;
+        }
+
+        /* 初期ヘルプ画面 */
+        #help-screen {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.9);
+            z-index: 200;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.5s;
+        }
+    </style>
+</head>
+<body id="main-body">
+
+    <div class="scanlines"></div>
+    <div class="vignette"></div>
+
+    <div class="hud text-glow" id="hud">
+        SYS.REQ: <span class="text-white">ONLINE</span><br>
+        MODE: <span id="hud-mode" class="text-yellow-400">KERNEL_EXPLOIT</span><br>
+        TARGET: UNKNOWN<br>
+        UPLINK: ESTABLISHED
+    </div>
+
+    <div id="console-container" class="text-glow">
+        <span id="output"></span><span class="cursor"></span>
+    </div>
+
+    <!-- ポップアップ -->
+    <div id="popup-overlay" class="popup-overlay">
+        <div id="popup-box" class="popup-box"></div>
+    </div>
+
+    <!-- ヘルプ画面 -->
+    <div id="help-screen" class="text-glow">
+        <h1 class="text-5xl font-bold mb-6">NEXUS OS v3.1</h1>
+        <p class="text-xl mb-8">Click or press any key to initialize audio and start hacking.</p>
+        <div class="border border-green-500 p-6 bg-black bg-opacity-50 text-left">
+            <h2 class="text-2xl mb-4 border-b border-green-500 pb-2">CONTROLS:</h2>
+            <ul class="space-y-2 text-lg">
+                <li><span class="text-yellow-400">[Any Key]</span> : Type code</li>
+                <li><span class="text-yellow-400">[Tab]</span>     : Switch hacking mode</li>
+                <li><span class="text-yellow-400">[Alt]</span>     : Auto-Decrypt sequence</li>
+                <li><span class="text-yellow-400">[Enter]</span>   : Access Granted</li>
+                <li><span class="text-yellow-400">[Esc]</span>     : Access Denied</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        // === データ定義 ===
+        const codes = {
+            kernel: `
+#include <linux/module.h>
+#include <linux/kernel.h>
+#include <linux/init.h>
+#include <linux/syscalls.h>
+#include <linux/delay.h>
+
+unsigned long **sys_call_table;
+unsigned long original_cr0;
+
+asmlinkage long (*original_sys_open)(const char *pathname, int flags, umode_t mode);
+
+asmlinkage long hacked_sys_open(const char *pathname, int flags, umode_t mode) {
+    printk(KERN_INFO "INTERCEPTED OPEN: %s\\n", pathname);
+    return original_sys_open(pathname, flags, mode);
+}
+
+static int __init intercept_init(void) {
+    printk(KERN_INFO "Rootkit: Initializing bypass sequence...\\n");
+    sys_call_table = (unsigned long **)kallsyms_lookup_name("sys_call_table");
+    
+    if(!sys_call_table) {
+        printk(KERN_ERR "Rootkit: Syscall table not found.\\n");
+        return -1;
+    }
+
+    write_cr0(read_cr0() & (~0x10000));
+    original_sys_open = (void *)sys_call_table[__NR_open];
+    sys_call_table[__NR_open] = (unsigned long *)hacked_sys_open;
+    write_cr0(read_cr0() | 0x10000);
+    
+    printk(KERN_INFO "Rootkit: Hook injected successfully at 0x%p.\\n", sys_call_table);
+    return 0;
+}
+`,
+            network: `
+[+] Starting Nmap 7.92 ( https://nmap.org ) at 2026-11-09 10:53 JST
+NSE: Loaded 156 scripts for scanning.
+NSE: Script Pre-scanning.
+Initiating ARP Ping Scan at 10:53
+Scanning 192.168.1.0/24 [256 IPs]
+Completed ARP Ping Scan at 10:53, 2.11s elapsed (14 total hosts)
+Initiating SYN Stealth Scan at 10:53
+Scanning 14 hosts [1000 ports/host]
+Discovered open port 22/tcp on 192.168.1.10
+Discovered open port 80/tcp on 192.168.1.20
+Discovered open port 443/tcp on 192.168.1.20
+Discovered open port 3306/tcp on 192.168.1.50
+Completed SYN Stealth Scan at 10:53, 4.30s elapsed (14000 total ports)
+Nmap scan report for target-mainframe.local (192.168.1.104)
+Host is up (0.0012s latency).
+Not shown: 996 closed tcp ports (reset)
+PORT     STATE SERVICE       VERSION
+22/tcp   open  ssh           OpenSSH 8.2p1 Ubuntu 4ubuntu0.3 (Ubuntu Linux; protocol 2.0)
+80/tcp   open  http          Apache httpd 2.4.41 ((Ubuntu))
+443/tcp  open  ssl/http      Apache httpd 2.4.41 ((Ubuntu))
+3306/tcp open  mysql         MySQL 8.0.28-0ubuntu0.20.04.3
+MAC Address: 00:1A:2B:3C:4D:5E (Unknown)
+Device type: general purpose
+Running: Linux 4.X|5.X
+OS CPE: cpe:/o:linux:linux_kernel:5.4
+OS details: Linux 4.15 - 5.6
+Network Distance: 1 hop
+`,
+            hexdump: `
+Offset(h) 00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F  Decoded text
+00000000  7F 45 4C 46 02 01 01 00 00 00 00 00 00 00 00 00  .ELF............
+00000010  02 00 3E 00 01 00 00 00 68 11 40 00 00 00 00 00  ..>.....h.@.....
+00000020  40 00 00 00 00 00 00 00 88 1E 00 00 00 00 00 00  @...............
+00000030  00 00 00 00 40 00 38 00 09 00 40 00 1B 00 1A 00  ....@.8...@.....
+00000040  06 00 00 00 05 00 00 00 40 00 00 00 00 00 00 00  ........@.......
+00000050  40 00 40 00 00 00 00 00 40 00 40 00 00 00 00 00  @.@.....@.@.....
+00000060  F8 01 00 00 00 00 00 00 F8 01 00 00 00 00 00 00  ................
+00000070  08 00 00 00 00 00 00 00 03 00 00 00 04 00 00 00  ................
+EXTRACTING ENCRYPTED PAYLOAD...
+`
+        };
+
+        const modeNames = ["KERNEL_EXPLOIT", "NETWORK_SCAN", "HEX_ANALYSIS"];
+        const modeKeys = ["kernel", "network", "hexdump"];
+        let currentModeIndex = 0;
+        let currentCode = codes[modeKeys[currentModeIndex]];
+        let codeIndex = 0;
+        let isSystemLocked = false;
+        let audioInitialized = false;
+
+        // === DOM要素 ===
+        const outputEl = document.getElementById('output');
+        const hudModeEl = document.getElementById('hud-mode');
+        const helpScreen = document.getElementById('help-screen');
+        const popupOverlay = document.getElementById('popup-overlay');
+        const popupBox = document.getElementById('popup-box');
+        const mainBody = document.getElementById('main-body');
+
+        // === Tone.js サウンド設定 ===
+        let typeSynth, successSynth, errorOsc, scanSynth;
+
+        function initAudio() {
+            if (audioInitialized) return;
+            
+            // タイピング音（ノイズ）
+            typeSynth = new Tone.NoiseSynth({
+                noise: { type: 'white' },
+                envelope: { attack: 0.001, decay: 0.05, sustain: 0, release: 0.05 }
+            }).toDestination();
+            typeSynth.volume.value = -15;
+
+            // 成功音（アルペジオ風）
+            successSynth = new Tone.Synth({
+                oscillator: { type: 'square' },
+                envelope: { attack: 0.01, decay: 0.2, sustain: 0.2, release: 1 }
+            }).toDestination();
+            successSynth.volume.value = -10;
+
+            // 失敗音（低音ブザー）
+            errorOsc = new Tone.Oscillator(100, "sawtooth").toDestination();
+            errorOsc.volume.value = -5;
+
+            // プログレスバー音
+            scanSynth = new Tone.Synth({
+                oscillator: { type: 'sine' },
+                envelope: { attack: 0.01, decay: 0.1, sustain: 0, release: 0.1 }
+            }).toDestination();
+            scanSynth.volume.value = -15;
+
+            Tone.start();
+            audioInitialized = true;
+            helpScreen.style.opacity = '0';
+            setTimeout(() => helpScreen.style.display = 'none', 500);
+
+            outputEl.textContent = "INITIALIZING SYSTEM...\nLOADING MODULES [OK]\nESTABLISHING SECURE CONNECTION [OK]\nAWAITING INPUT...\n\nroot@nexus:~# ";
+        }
+
+        // 初期クリックでもオーディオを初期化
+        document.addEventListener('click', initAudio);
+
+        // === メインロジック ===
+
+        // プログレスバー演出
+        let autoInterval;
+        function runAutoDecrypt() {
+            if (isSystemLocked || autoInterval) return;
+            
+            outputEl.textContent += "\n\n[!] INITIATING BRUTE FORCE DECRYPTION...\n";
+            let progress = 0;
+            
+            autoInterval = setInterval(() => {
+                progress += Math.floor(Math.random() * 5) + 1;
+                if (progress > 100) progress = 100;
+                
+                const barLength = 40;
+                const filled = Math.floor((progress / 100) * barLength);
+                const empty = barLength - filled;
+                const bar = "█".repeat(filled) + "░".repeat(empty);
+                
+                const hash = Math.random().toString(36).substring(2, 10).toUpperCase();
+                
+                // 最後の行を上書きするように改行せずに追記（簡易的に実現するため行を追加）
+                outputEl.textContent += `\r[${bar}] ${progress}% | HASH: ${hash}`;
+                
+                if (audioInitialized) scanSynth.triggerAttackRelease(400 + progress * 5, "16n");
+                window.scrollTo(0, document.body.scrollHeight);
+
+                if (progress >= 100) {
+                    clearInterval(autoInterval);
+                    autoInterval = null;
+                    outputEl.textContent += "\n\n[+] DECRYPTION COMPLETE. KEY FOUND: 0x8F9A2B4C\nroot@nexus:~# ";
+                    if (audioInitialized) {
+                        successSynth.triggerAttackRelease("C5", "8n", "+0");
+                        successSynth.triggerAttackRelease("E5", "8n", "+0.1");
+                    }
+                }
+            }, 100);
+        }
+
+        function showPopup(type) {
+            if (isSystemLocked) return;
+            isSystemLocked = true;
+            
+            // AutoDecryptionを停止
+            if (autoInterval) {
+                clearInterval(autoInterval);
+                autoInterval = null;
+            }
+
+            popupOverlay.style.display = 'flex';
+            
+            if (type === 'granted') {
+                popupBox.textContent = "ACCESS GRANTED";
+                popupBox.className = "popup-box granted";
+                if (audioInitialized) {
+                    successSynth.triggerAttackRelease("C5", "16n", "+0");
+                    successSynth.triggerAttackRelease("E5", "16n", "+0.1");
+                    successSynth.triggerAttackRelease("G5", "8n", "+0.2");
+                }
+            } else {
+                popupBox.textContent = "ACCESS DENIED";
+                popupBox.className = "popup-box denied";
+                mainBody.classList.add("glitch-screen");
+                if (audioInitialized) {
+                    errorOsc.start();
+                    setTimeout(() => errorOsc.stop(), 500);
+                }
+            }
+
+            setTimeout(() => {
+                popupOverlay.style.display = 'none';
+                mainBody.classList.remove("glitch-screen");
+                outputEl.textContent += "\n\nroot@nexus:~# ";
+                window.scrollTo(0, document.body.scrollHeight);
+                isSystemLocked = false;
+            }, 2500);
+        }
+
+        // キー入力イベント
+        document.addEventListener('keydown', (e) => {
+            initAudio(); // 初回キー入力でオーディオ開始
+
+            // 無視するキー
+            if (e.key === 'F5' || e.key === 'F12' || e.ctrlKey || e.metaKey) return;
+
+            e.preventDefault();
+
+            if (isSystemLocked) return;
+
+            // --- 特別なコマンド ---
+            if (e.key === 'Enter') {
+                showPopup('granted');
+                return;
+            }
+
+            if (e.key === 'Escape') {
+                showPopup('denied');
+                return;
+            }
+
+            if (e.key === 'Tab') {
+                currentModeIndex = (currentModeIndex + 1) % modeKeys.length;
+                currentCode = codes[modeKeys[currentModeIndex]];
+                codeIndex = 0;
+                hudModeEl.textContent = modeNames[currentModeIndex];
+                outputEl.textContent += `\n\n[!] SWITCHING MODULE: ${modeNames[currentModeIndex]}\nroot@nexus:~# `;
+                if (audioInitialized) successSynth.triggerAttackRelease("A4", "16n");
+                window.scrollTo(0, document.body.scrollHeight);
+                return;
+            }
+
+            if (e.key === 'Alt') {
+                runAutoDecrypt();
+                return;
+            }
+
+            // Autoモード中は手動タイピングを無視
+            if (autoInterval) return;
+
+            // --- 通常のタイピング処理 ---
+            const charsPerKeystroke = Math.floor(Math.random() * 4) + 4; // 4〜7文字ずつランダムに入力
+            let charsToAdd = currentCode.substring(codeIndex, codeIndex + charsPerKeystroke);
+            
+            // コードが足りなくなったらループ
+            if (codeIndex + charsPerKeystroke >= currentCode.length) {
+                charsToAdd += currentCode.substring(0, (codeIndex + charsPerKeystroke) - currentCode.length);
+                codeIndex = (codeIndex + charsPerKeystroke) % currentCode.length;
+            } else {
+                codeIndex += charsPerKeystroke;
+            }
+
+            outputEl.textContent += charsToAdd;
+            
+            // 音を鳴らす（少し間引いて重くならないように）
+            if (audioInitialized && Math.random() > 0.3) {
+                typeSynth.triggerAttackRelease("32n");
+            }
+
+            window.scrollTo(0, document.body.scrollHeight);
+        });
+    </script>
+</body>
+</html>
