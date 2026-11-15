@@ -24,6 +24,33 @@
             text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
         }
 
+        #screen-controls {
+            position: fixed;
+            bottom: 12px;
+            left: 12px;
+            right: 12px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            z-index: 60;
+        }
+
+        #screen-controls button {
+            flex: 1;
+            min-height: 44px;
+            padding: 8px 4px;
+            border: 1px solid #00ff41;
+            background: #001400;
+            color: #00ff41;
+            font-size: 13px;
+            touch-action: manipulation;
+        }
+
+        #screen-controls button:focus-visible {
+            outline: 2px solid #ffff00;
+            outline-offset: 2px;
+        }
+
         /* スキャンラインエフェクト */
         .scanlines {
             position: fixed;
@@ -185,6 +212,14 @@
     </div>
 
     <!-- ポップアップ -->
+    <nav id="screen-controls" aria-label="画面の操作">
+        <button type="button" data-command="Type">入力</button>
+        <button type="button" data-command="Tab">モード</button>
+        <button type="button" data-command="Alt">自動解読</button>
+        <button type="button" data-command="Enter">成功</button>
+        <button type="button" data-command="Escape">失敗</button>
+    </nav>
+
     <div id="popup-overlay" class="popup-overlay">
         <div id="popup-box" class="popup-box"></div>
     </div>
@@ -193,6 +228,7 @@
     <div id="help-screen" class="text-glow">
         <h1 class="text-5xl font-bold mb-6">NEXUS OS v3.1</h1>
         <p class="text-xl mb-8">Click or press any key to initialize audio and start hacking.</p>
+        <p class="mb-4 text-sm">画面をタップして開始。下のボタンでも操作できます。実際の通信や侵入は行わない演出です。</p>
         <div class="border border-green-500 p-6 bg-black bg-opacity-50 text-left">
             <h2 class="text-2xl mb-4 border-b border-green-500 pb-2">CONTROLS:</h2>
             <ul class="space-y-2 text-lg">
@@ -422,29 +458,24 @@ EXTRACTING ENCRYPTED PAYLOAD...
             }, 2500);
         }
 
-        // キー入力イベント
-        document.addEventListener('keydown', (e) => {
+        // キーと画面ボタンで同じ操作を呼び出す
+        function handleCommand(key) {
             initAudio(); // 初回キー入力でオーディオ開始
-
-            // 無視するキー
-            if (e.key === 'F5' || e.key === 'F12' || e.ctrlKey || e.metaKey) return;
-
-            e.preventDefault();
 
             if (isSystemLocked) return;
 
             // --- 特別なコマンド ---
-            if (e.key === 'Enter') {
+            if (key === 'Enter') {
                 showPopup('granted');
                 return;
             }
 
-            if (e.key === 'Escape') {
+            if (key === 'Escape') {
                 showPopup('denied');
                 return;
             }
 
-            if (e.key === 'Tab') {
+            if (key === 'Tab') {
                 currentModeIndex = (currentModeIndex + 1) % modeKeys.length;
                 currentCode = codes[modeKeys[currentModeIndex]];
                 codeIndex = 0;
@@ -455,7 +486,7 @@ EXTRACTING ENCRYPTED PAYLOAD...
                 return;
             }
 
-            if (e.key === 'Alt') {
+            if (key === 'Alt') {
                 runAutoDecrypt();
                 return;
             }
@@ -483,6 +514,17 @@ EXTRACTING ENCRYPTED PAYLOAD...
             }
 
             window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        document.querySelectorAll('#screen-controls button').forEach(button => {
+            button.addEventListener('click', () => handleCommand(button.dataset.command));
+        });
+
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'F5' || e.key === 'F12' || e.ctrlKey || e.metaKey) return;
+            if (e.target.closest('#screen-controls') && ['Enter', ' ', 'Tab'].includes(e.key)) return;
+            e.preventDefault();
+            handleCommand(e.key);
         });
     </script>
 </body>
